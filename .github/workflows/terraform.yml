@@ -1,0 +1,107 @@
+name: '1 - Terraform'
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  TF_LOG: INFO
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  dotnet:
+    runs-on: self-hosted
+    environment: production
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 7.0.x
+
+    - name: AWS CLI
+      continue-on-error: true
+      run: dotnet tool install -g Amazon.Lambda.Tools 
+
+    - name: Restore dependencies
+      working-directory: ./app/src
+      run: dotnet restore 
+
+    - name: Build
+      working-directory: ./app/src
+      run: dotnet build --no-restore
+
+    - name: Deploy to Lambda
+      working-directory: ./app/src/MyLambdaFunctionAOT
+      run: dotnet lambda package bootstrap.zip
+
+  artifacts:
+    needs: dotnet
+    name: 'Upload Artifacts'
+    runs-on: self-hosted
+    environment: production
+    steps:
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        retention-days: 1
+        name: bootstrap
+        path: ./app/src/MyLambdaFunctionAOT/bootstrap.zip
+
+  terraform:
+    needs: artifacts
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./infra
+
+    steps:
+
+    - name: Configure aws credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.ROLE_TO_ASSUME }}
+        aws-region: us-east-1
+
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Download artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: bootstrap
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Terraform Init
+      run: terraform  init  -backend-config="bucket=${{ secrets.BUCKET_TF_STATE }}"
+
+    - name: Terraform format
+      id: fmt
+      continue-on-error: true      
+      run: terraform fmt -check
+    
+    - name: Terraform validate
+      id: validate
+      run: terraform validate
+
+    - name: Terraform Plan
+      run: terraform plan -input=false
+
+    - name: Terraform Apply
+      run: terraform  apply -auto-approve -input=false
+
+
+
