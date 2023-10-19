@@ -19,11 +19,11 @@ locals{
 }
 
 data "aws_s3_bucket" "api_bucket" {
-  bucket = "domingues-vi-bucket-lambdas"
+  bucket = "meu-bucket"
 }
 
 data "aws_iam_role" "api_lambda_role" {
-  name = "dotnet-lambda-role"
+  name = "minha-role"
 }
 
 resource "aws_s3_object" "api_code_archive" {
